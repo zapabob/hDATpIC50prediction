@@ -1,0 +1,2 @@
+# hDATpIC50prediction
+transformerモデルを構築し、決定係数90　テストデータのR2は70でありまだまだ特徴量エンジニアリングが重要
