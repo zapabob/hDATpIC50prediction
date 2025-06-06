@@ -18,7 +18,7 @@ Python 3.7以上
 
 bash
 コードをコピーする
-pip install numpy pandas rdkit-pypi chembl_webresource_client scikit-learn torch tqdm optuna PyQt5 matplotlib seaborn scipy
+pip install -r requirements.txt
 注意: 一部のライブラリは追加のシステム依存関係を必要とする場合があります。
 
 RDKit: RDKitが正しくインストールされていることを確認してください。問題が発生した場合は、RDKitのインストールガイドを参照してください。
@@ -54,6 +54,20 @@ Export Resultsボタンをクリックして、予測結果をCSVファイルに
 キャッシュ管理
 
 Clear Cacheボタンをクリックして、キャッシュされた分子特徴量を削除します。
+
+## CLIの使用
+コマンドラインから予測を実行する簡単なインターフェースを追加しました。
+
+### 単一予測の例
+```bash
+python cli.py predict --model models/dat_transformer_model.pt --smiles "CCO"
+```
+
+### バッチ予測の例
+```bash
+python cli.py predict --model models/dat_transformer_model.pt --input smiles.txt
+```
+
 プロジェクト構成
 dat_predictor.py: すべてのクラスとロジックを含むメインのアプリケーションスクリプト。
 .cache/: キャッシュされた分子特徴量を保存するディレクトリ。
