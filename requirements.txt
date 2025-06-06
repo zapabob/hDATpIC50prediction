@@ -1,0 +1,12 @@
+numpy
+pandas
+rdkit-pypi
+chembl_webresource_client
+scikit-learn
+torch
+tqdm
+optuna
+PyQt5
+matplotlib
+seaborn
+scipy
