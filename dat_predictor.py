@@ -13,7 +13,11 @@ from functools import partial
 import numpy as np
 import pandas as pd
 from rdkit import Chem
-from rdkit.Chem import Descriptors, Draw, AllChem, MACCSkeys, Crippen
+from rdkit.Chem.Descriptors import MolWt, NumHDonors, NumHAcceptors, NumRotatableBonds, TPSA, FractionCSP3, BalabanJ, BertzCT, HeavyAtomCount
+from rdkit.Chem.Crippen import MolLogP
+from rdkit.Chem import rdMolDescriptors
+from rdkit.Chem.MACCSkeys import GenMACCSKeys
+from rdkit.Chem.Draw import MolToImage
 from chembl_webresource_client.new_client import new_client
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import RobustScaler, StandardScaler
@@ -24,20 +28,23 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 import optuna
+from sklearn.metrics import roc_curve, auc  # 追加
 
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QMessageBox,
     QGroupBox, QProgressBar, QFileDialog, QPlainTextEdit,
     QComboBox
 )
-from PyQt6.QtGui import QPixmap, QImage
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtCore import Qt, QThread, Signal
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import ks_2samp  # Kolmogorov-Smirnov test
+from rdkit.Chem.MACCSkeys import GenMACCSKeys
+from rdkit.Chem.Draw import MolToImage
 
 
 @dataclass
@@ -78,26 +85,29 @@ class FeatureCache:
 class MolecularDescriptorCalculator:
     """分子記述子計算クラス + サイケデリックス特徴量"""
     def __init__(self) -> None:
-        from rdkit.Chem import Descriptors, Crippen, AllChem, MACCSkeys
-        
         self.descriptor_functions = {
-            'MolWt': Descriptors.MolWt,
-            'MolLogP': Crippen.MolLogP,
-            'NumHDonors': Descriptors.NumHDonors,
-            'NumHAcceptors': Descriptors.NumHAcceptors,
-            'NumRotatableBonds': Descriptors.NumRotatableBonds,
-            'NumAromaticRings': Descriptors.NumAromaticRings,
-            'TPSA': Descriptors.TPSA,
-            'FractionCSP3': Descriptors.FractionCSP3,
-            'LabuteASA': Descriptors.LabuteASA,
-            'BalabanJ': Descriptors.BalabanJ,
-            'BertzCT': Descriptors.BertzCT,
-            # 必要に応じて追加
+            'MolWt': MolWt,
+            'MolLogP': MolLogP,
+            'NumHDonors': NumHDonors,
+            'NumHAcceptors': NumHAcceptors,
+            'NumRotatableBonds': NumRotatableBonds,
+            'NumAromaticRings': rdMolDescriptors.CalcNumAromaticRings,
+            'TPSA': TPSA,
+            'FractionCSP3': FractionCSP3,
+            'LabuteASA': rdMolDescriptors.CalcLabuteASA,
+            'BalabanJ': BalabanJ,
+            'BertzCT': BertzCT,
+            'HeavyAtomCount': HeavyAtomCount,
+            'NumAliphaticRings': rdMolDescriptors.CalcNumAliphaticRings,
+            'NumSaturatedRings': rdMolDescriptors.CalcNumSaturatedRings,
+            'NumHeteroatoms': rdMolDescriptors.CalcNumHeteroatoms,
+            'RingCount': rdMolDescriptors.CalcNumRings,
+            'NumSpiroAtoms': rdMolDescriptors.CalcNumSpiroAtoms,
+            'NumBridgeheadAtoms': rdMolDescriptors.CalcNumBridgeheadAtoms,
         }
-
         self.fingerprint_functions = {
-            'ECFP4': partial(AllChem.GetMorganFingerprintAsBitVect, radius=2, nBits=1024),
-            'MACCS': MACCSkeys.GenMACCSKeys
+            'ECFP4': lambda mol: rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, 2, nBits=1024),
+            'MACCS': lambda mol: GenMACCSKeys(mol)
         }
         # サイケデリックス特徴量SMARTSパターン
         self.psychedelic_patterns = {
@@ -107,6 +117,16 @@ class MolecularDescriptorCalculator:
             'MethoxyCount': Chem.MolFromSmarts('CO'),
             'HalogenCount': Chem.MolFromSmarts('[F,Cl,Br,I]'),
             'HasNNDimethyl': Chem.MolFromSmarts('N(C)C'),
+        }
+        # 受容体アゴニスト代表スキャフォールドSMARTS
+        self.scaffold_patterns = {
+            'DAT_Phenylethylamine': Chem.MolFromSmarts('NCCc1ccccc1'),
+            '5HT2A_Indole': Chem.MolFromSmarts('c1cc2c(cc1)[nH]c2'),
+            'CB1_Dibenzopyran': Chem.MolFromSmarts('c1cc2c(cc1)Cc3ccccc3C2'),
+            'CB2_Dibenzopyran': Chem.MolFromSmarts('c1cc2c(cc1)Cc3ccccc3C2'),
+            'MuOpioid_Morphinan': Chem.MolFromSmarts('C1CC[C@]23c4ccc(O)cc4O[C@H]2[C@@H](O)C=C[C@H]3[C@H]1C5'),
+            'DeltaOpioid_Enkephalin': Chem.MolFromSmarts('CC(C)C[C@H](N)C(=O)NCC(=O)N'),
+            'KappaOpioid_Cyclohexanecarboxamide': Chem.MolFromSmarts('C1CCCCC1C(=O)N'),
         }
 
     def calculate(self, mol: Chem.Mol) -> Optional[np.ndarray]:
@@ -129,19 +149,22 @@ class MolecularDescriptorCalculator:
 
             # サイケデリックス特徴量
             psychedelic_features = []
-            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasIndole'])))
-            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasTryptamine'])))
-            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasPhenethylamine'])))
+            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasIndole']) if self.psychedelic_patterns['HasIndole'] else 0))
+            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasTryptamine']) if self.psychedelic_patterns['HasTryptamine'] else 0))
+            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasPhenethylamine']) if self.psychedelic_patterns['HasPhenethylamine'] else 0))
             # メトキシ基数
-            methoxy_count = len(mol.GetSubstructMatches(self.psychedelic_patterns['MethoxyCount']))
+            methoxy_count = len(mol.GetSubstructMatches(self.psychedelic_patterns['MethoxyCount'])) if self.psychedelic_patterns['MethoxyCount'] else 0
             psychedelic_features.append(methoxy_count)
             # ハロゲン数
-            halogen_count = len(mol.GetSubstructMatches(self.psychedelic_patterns['HalogenCount']))
+            halogen_count = len(mol.GetSubstructMatches(self.psychedelic_patterns['HalogenCount'])) if self.psychedelic_patterns['HalogenCount'] else 0
             psychedelic_features.append(halogen_count)
             # N,N-ジメチルアミン基
-            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasNNDimethyl'])))
+            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasNNDimethyl']) if self.psychedelic_patterns['HasNNDimethyl'] else 0))
 
-            return np.array(descriptors + fingerprints + psychedelic_features)
+            # 受容体アゴニストスキャフォールド特徴量
+            scaffold_features = [int(mol.HasSubstructMatch(pat)) if pat is not None else 0 for pat in self.scaffold_patterns.values()]
+
+            return np.array(descriptors + fingerprints + psychedelic_features + scaffold_features)
 
         except Exception as e:
             logging.error(f"特徴量計算エラー: {e}", exc_info=True)
@@ -163,7 +186,8 @@ class MolecularDescriptorCalculator:
             'HasIndole', 'HasTryptamine', 'HasPhenethylamine',
             'MethoxyCount', 'HalogenCount', 'HasNNDimethyl'
         ]
-        return descriptor_names + fingerprint_names + psychedelic_names
+        scaffold_names = list(self.scaffold_patterns.keys())
+        return descriptor_names + fingerprint_names + psychedelic_names + scaffold_names
 
 
 class TransformerModel(nn.Module):
@@ -843,10 +867,10 @@ class DATPredictor:
 
 class TrainingThread(QThread):
     """学習進捗管理スレッド"""
-    progress = pyqtSignal(int)
-    status = pyqtSignal(str)
-    error = pyqtSignal(str)
-    finished = pyqtSignal(dict)
+    progress = Signal(int)
+    status = Signal(str)
+    error = Signal(str)
+    finished = Signal(dict)
 
     def __init__(self, predictor: DATPredictor, method: str = 'optuna', target_chembl_id: str = 'CHEMBL238') -> None:
         super().__init__()
@@ -921,9 +945,9 @@ class TrainingThread(QThread):
 
 class BatchPredictionThread(QThread):
     """バッチ予測管理スレッド"""
-    progress = pyqtSignal(int)
-    result = pyqtSignal(tuple)
-    error = pyqtSignal(str)
+    progress = Signal(int)
+    result = Signal(tuple)
+    error = Signal(str)
 
     def __init__(self, predictor: DATPredictor, smiles_list: List[str]) -> None:
         super().__init__()
@@ -986,6 +1010,11 @@ class DATPredictorGUI(QMainWindow):
         self.target_combo = QComboBox()
         self.target_combo.addItem('DAT (CHEMBL238)', 'CHEMBL238')
         self.target_combo.addItem('5HT2A (CHEMBL224)', 'CHEMBL224')
+        self.target_combo.addItem('CB1 (CHEMBL218)', 'CHEMBL218')
+        self.target_combo.addItem('CB2 (CHEMBL1861)', 'CHEMBL1861')
+        self.target_combo.addItem('μ-opioid (CHEMBL233)', 'CHEMBL233')
+        self.target_combo.addItem('δ-opioid (CHEMBL236)', 'CHEMBL236')
+        self.target_combo.addItem('κ-opioid (CHEMBL237)', 'CHEMBL237')
         target_layout.addWidget(target_label)
         target_layout.addWidget(self.target_combo)
         layout.addLayout(target_layout)
@@ -1111,6 +1140,16 @@ class DATPredictorGUI(QMainWindow):
         self.descriptor_table.setHorizontalHeaderLabels(['Descriptor', 'Value'])
         self.descriptor_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.descriptor_table)
+
+        # 特徴量重要度グラフボタン
+        self.feature_importance_btn = QPushButton('Show Feature Importances')
+        self.feature_importance_btn.clicked.connect(self.handle_show_feature_importances)
+        layout.addWidget(self.feature_importance_btn)
+
+        # ROC AUCカーブ表示ボタン
+        self.roc_auc_btn = QPushButton('Show ROC AUC Curve')
+        self.roc_auc_btn.clicked.connect(self.handle_show_roc_auc)
+        layout.addWidget(self.roc_auc_btn)
 
         group.setLayout(layout)
         return group
@@ -1313,7 +1352,7 @@ class DATPredictorGUI(QMainWindow):
                 raise ValueError("無効なSMILES文字列です。")
 
             # 構造図の更新
-            img = Draw.MolToImage(mol)
+            img = MolToImage(mol)
             buffer = io.BytesIO()
             img.save(buffer, format='PNG')
             qimg = QImage.fromData(buffer.getvalue())
@@ -1345,6 +1384,57 @@ class DATPredictorGUI(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, 'Error', f"Display update failed: {str(e)}")
             logging.error(f"分子表示エラー: {e}", exc_info=True)
+
+    def handle_show_feature_importances(self):
+        """特徴量重要度グラフの表示"""
+        if not self.predictor.is_trained or self.predictor.importances is None:
+            QMessageBox.information(self, 'Info', 'モデルが学習されていないか、特徴量重要度が利用できません。')
+            return
+        import matplotlib.pyplot as plt
+        import numpy as np
+        # 上位20特徴量を表示
+        importances = self.predictor.importances
+        feature_names = self.predictor.feature_names
+        indices = np.argsort(importances)[::-1][:20]
+        plt.figure(figsize=(10, 6))
+        plt.barh([feature_names[i] for i in indices][::-1], importances[indices][::-1])
+        plt.xlabel('Importance')
+        plt.title('Top 20 Feature Importances')
+        plt.tight_layout()
+        plt.show()
+
+    def handle_show_roc_auc(self):
+        """ROC AUCカーブの表示"""
+        if not self.predictor.is_trained:
+            QMessageBox.information(self, 'Info', 'モデルが学習されていません。')
+            return
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from sklearn.metrics import roc_curve, auc
+
+        # pIC50の閾値で2値化（例: 7.0 以上をactive）
+        threshold = 7.0
+        y_train_true = (self.predictor.y_train >= threshold).astype(int)
+        y_test_true = (self.predictor.y_test >= threshold).astype(int)
+        y_train_pred = self.predictor.pipeline.predict(self.predictor.X_train)
+        y_test_pred = self.predictor.pipeline.predict(self.predictor.X_test)
+
+        # 予測値をそのままスコアとして使う
+        fpr_train, tpr_train, _ = roc_curve(y_train_true, y_train_pred)
+        fpr_test, tpr_test, _ = roc_curve(y_test_true, y_test_pred)
+        auc_train = auc(fpr_train, tpr_train)
+        auc_test = auc(fpr_test, tpr_test)
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr_train, tpr_train, label=f'Train ROC (AUC={auc_train:.2f})')
+        plt.plot(fpr_test, tpr_test, label=f'Test ROC (AUC={auc_test:.2f})')
+        plt.plot([0, 1], [0, 1], 'k--', label='Random')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title(f'ROC AUC Curve (Threshold: pIC50≥{threshold})')
+        plt.legend(loc='lower right')
+        plt.tight_layout()
+        plt.show()
 
     def clear_cache(self) -> None:
         """キャッシュをクリアする"""
@@ -1442,7 +1532,27 @@ REFERENCE_COMPOUNDS = {
         'LSD': 'CN(C)C1CCC2=C1C3C(C2)C4=CC=CC=C4N3C',
         'DMT': 'CN(C)CCC1=CNC2=CC=CC=C12',
         'Psilocybin': 'COP(=O)(O)OCC1C2=CC=CC=C2NC1',
-    }
+    },
+    'CHEMBL218': {  # CB1
+        'WIN 55,212-2': 'CN1CC(C2=CC=CC=C2)C(C3=CC=CC=C3)C1',
+        'CP 55,940': 'CC(C)(C)C1=CC2=C(C=C1)C3CC(C2)C4=CC=CC=C4C3',
+    },
+    'CHEMBL1861': {  # CB2
+        'JWH-133': 'CC(C)C1=CC2=C(C=C1)C3CC(C2)C4=CC=CC=C4C3',
+        'HU-308': 'CC(C)C1=CC2=C(C=C1)C3CC(C2)C4=CC=CC=C4C3O',
+    },
+    'CHEMBL233': {  # μ-opioid
+        'Morphine': 'CN1CC[C@]23C4=C5C=CC(O)=C4O[C@H]2[C@@H](O)C=C[C@H]3[C@H]1C5',
+        'DAMGO': 'CC(C)C[C@H](NC(=O)[C@H](N)CCC(=O)NCC(=O)N)C(=O)NCC(=O)N',
+    },
+    'CHEMBL236': {  # δ-opioid
+        'DPDPE': 'CC(C)C[C@H](NC(=O)[C@H](N)CCC(=O)NCC(=O)N)C(=O)NCC(=O)N',
+        'SNC80': 'CC1=CC2=C(C=C1)C3CC(C2)C4=CC=CC=C4C3',
+    },
+    'CHEMBL237': {  # κ-opioid
+        'U-50488': 'CC1=CC2=C(C=C1)C3CC(C2)C4=CC=CC=C4C3N',
+        'Salvinorin A': 'CC1=CC2=C(C=C1)C3CC(C2)C4=CC=CC=C4C3OC(=O)C',
+    },
 }
 
 def get_reference_pIC50s(predictor, target_chembl_id):
