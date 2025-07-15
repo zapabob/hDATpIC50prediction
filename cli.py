@@ -5,7 +5,7 @@ from dat_predictor import DATPredictor
 
 def train(args):
     predictor = DATPredictor()
-    df = predictor.fetch_data()
+    df = predictor.fetch_data(target_chembl_id=args.target)
     predictor.prepare_data(df)
     if args.optimize:
         predictor.optimize_hyperparameters(n_trials=20)
@@ -14,6 +14,10 @@ def train(args):
     output = Path(args.output or Path(predictor.config.MODEL_DIR) / "dat_transformer_model.pt")
     predictor.save_model(str(output))
     print(f"Model saved to {output}")
+    reference_results = get_reference_pIC50s(predictor, args.target)
+    print("=== Reference Compounds pIC50 ===")
+    for name, smiles, pred in reference_results:
+        print(f"{name}: {pred:.2f} (SMILES: {smiles})")
 
 
 def predict(args):
@@ -45,6 +49,7 @@ subparsers = parser.add_subparsers(dest="command")
 train_parser = subparsers.add_parser("train", help="train model")
 train_parser.add_argument("--output", help="output model path")
 train_parser.add_argument("--optimize", action="store_true", help="use Optuna for hyperparameter optimization")
+train_parser.add_argument("--target", default="CHEMBL238", help="ChEMBL target ID (e.g. CHEMBL238 for DAT, CHEMBL224 for 5HT2A)")
 train_parser.set_defaults(func=train)
 
 predict_parser = subparsers.add_parser("predict", help="predict pIC50")

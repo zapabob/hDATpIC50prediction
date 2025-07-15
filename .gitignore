@@ -1,0 +1,108 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VSCode/IDE
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS
+.DS_Store
+Thumbs.db
+
+# キャッシュ・モデル・ログ
+.cache/
+models/
+*.log
+*.pkl
+*.npz
+*.pt
+*.h5
+*.ckpt
+*.tmp
+
+# Qt/GUI
+*.qrc
+*.ui
+
+# その他
+*.bak
+*.swp
+*.tmp
+
+# 環境ファイル
+.env
+.env.*
+
+# テスト出力
+*.out
+*.test
+
+# ドキュメントビルド
+_docs/_build/
+
+# Mac
+.AppleDouble
+.LSOverride
+
+# Windows
+Desktop.ini
+$RECYCLE.BIN/
+
+# バックアップ
+*.old
+*.orig
+*.backup
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# pytest
+.cache
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+
+# coverage
+htmlcov/
+.coverage
+.coverage.*
+.cache
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# その他
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.sav
+*.dat
+*.rpt
+
+# 画像出力
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.pdf
+
+# サンプルデータ
+sample_data/ 

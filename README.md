@@ -1,120 +1,81 @@
-# hDATpIC50prediction
-transformerモデルを構築し、決定係数90　テストデータのR2は70でありまだまだ特徴量エンジニアリングが重要
-DAT活性予測器
-このプロジェクトは、分子記述子とフィンガープリントに基づいてドーパミントランスポーター（DAT）の活性を予測するためのグラフィカルユーザーインターフェイス（GUI）アプリケーションです。SMILES表記から化合物のpIC50値を予測するために、Transformerベースのニューラルネットワークモデルなどの機械学習技術を活用しています。
+# hDAT/5HT2A pIC50 Prediction
 
-特徴
-モデル学習: ChEMBLから取得したデータを使用して、Transformerベースのモデルを学習します。
-ハイパーパラメータ最適化: Optunaを使用してモデルのハイパーパラメータを最適化します。
-単一予測: SMILES文字列を入力して、単一の化合物のpIC50値を予測します。
-バッチ予測: 複数の化合物のpIC50値を一度に予測します。
-可視化: 分子構造と分子記述子を表示します。
-キャッシュ: 計算された分子特徴量をキャッシュして、処理を高速化します。
-インストール
-必要条件
-Python 3.7以上
-依存ライブラリのインストール
-以下のコマンドを使用して、必要なPythonライブラリをインストールします。
+## 概要
+本プロジェクトは、ヒトドーパミントランスポーター（DAT, CHEMBL238）および5HT2A受容体（CHEMBL224）に対する化合物のpIC50値を、SMILESから機械学習（Transformerモデル）で予測するPythonアプリケーションです。
 
-bash
-コードをコピーする
+- サイケデリックス化合物特有の特徴量抽出に対応
+- 標準物質（メタンフェタミン、コカイン、LSD等）のpIC50を自動表示
+- CLI/GUI（PyQt6）両対応
+- CUDA（RTX3080等）による高速学習
+- 電源断・異常終了時の自動リカバリー/バックアップ
+
+---
+
+## 使い方
+
+### 1. 必要なパッケージのインストール
+```bash
 pip install -r requirements.txt
-注意: 一部のライブラリは追加のシステム依存関係を必要とする場合があります。
-
-RDKit: RDKitが正しくインストールされていることを確認してください。問題が発生した場合は、RDKitのインストールガイドを参照してください。
-PyQt5: PyQt5はC++コンパイラを必要とする場合があります。Windowsではpip経由でインストールできます。macOSやLinuxでも同様です。
-使用方法
-リポジトリのクローンまたはダウンロード
-
-提供されたコードをdat_predictor.pyというファイル名で保存してください。
-
-アプリケーションの実行
-
-bash
-コードをコピーする
-python dat_predictor.py
-GUIの操作
-
-モデル学習
-
-Train Modelボタンをクリックして、デフォルトのパラメータでモデルを学習します。
-**Optimize (Optuna)**ボタンをクリックして、ハイパーパラメータの最適化を行います。
-単一予測
-
-Single Predictionセクションで、化合物のSMILES文字列を入力します。
-Predictボタンをクリックして、予測されたpIC50値と分子記述子を表示します。
-バッチ予測
-
-Batch Predictionセクションで、複数のSMILES文字列を1行ずつ入力します。
-Predict Batchボタンをクリックして、すべての入力化合物の予測を実行します。
-Export Resultsボタンをクリックして、予測結果をCSVファイルに保存します。
-可視化
-
-単一予測時に、分子構造と分子記述子が表示されます。
-キャッシュ管理
-
-Clear Cacheボタンをクリックして、キャッシュされた分子特徴量を削除します。
-
-## CLIの使用
-コマンドラインから予測を実行する簡単なインターフェースを追加しました。
-
-### 単一予測の例
-```bash
-python cli.py predict --model models/dat_transformer_model.pt --smiles "CCO"
 ```
 
-### バッチ予測の例
+### 2. CLIでの学習・予測
 ```bash
-python cli.py predict --model models/dat_transformer_model.pt --input smiles.txt
+# DATで学習
+py -3 cli.py train --target CHEMBL238
+# 5HT2Aで学習
+py -3 cli.py train --target CHEMBL224
 ```
 
-プロジェクト構成
-dat_predictor.py: すべてのクラスとロジックを含むメインのアプリケーションスクリプト。
-.cache/: キャッシュされた分子特徴量を保存するディレクトリ。
-models/: 学習済みモデルを保存するディレクトリ。
-dat_predictor.log: アプリケーションの詳細なログを含むログファイル。
-モジュールとクラス
-ModelConfig: モデルと学習のパラメータを含む設定用のデータクラス。
-FeatureCache: 分子特徴量のキャッシュを管理します。
-MolecularDescriptorCalculator: 分子記述子とフィンガープリントを計算します。
-TransformerModel: Transformerベースのニューラルネットワークモデルを定義します。
-ModelPipeline: 学習、検証、予測のプロセスを管理します。
-DATPredictor: データ準備とモデルの処理を統括する高レベルのクラス。
-TrainingThread: GUIでのモデル学習を管理するQThread。
-BatchPredictionThread: GUIでのバッチ予測を処理するQThread。
-DATPredictorGUI: アプリケーションのメインGUIクラス。
-ロギング
-アプリケーションは詳細な情報とエラーをdat_predictor.logに記録します。これにはデータ取得、前処理ステップ、学習の進行状況、予測の詳細が含まれます。
+### 3. GUIの起動
+```bash
+py -3 dat_predictor.py
+```
 
-エラーハンドリング
-無効なSMILES入力: 無効なSMILES文字列が入力された場合、エラーメッセージが表示されます。
-モデル未学習: モデルの学習前に予測が試みられた場合、警告が表示されます。
-キャッシュの問題: キャッシュに関連するエラーはログに記録され、ユーザーに通知されます。
-依存関係のバージョン情報
-以下のバージョン以上を使用することを推奨します。
+---
 
-Python: 3.7+
-numpy: 1.18+
-pandas: 1.0+
-RDKit: 2020.03.1+
-scikit-learn: 0.22+
-torch: 1.4+
-optuna: 1.3+
-PyQt5: 5.14+
-matplotlib: 3.1+
-seaborn: 0.10+
-scipy: 1.4+
-トラブルシューティング
-RDKitのインポートエラー: RDKitが正しくインストールされていることを確認してください。RDKitのインストールガイドを参照してください。
-ModuleNotFoundError: モジュールが見つからない場合、すべての依存関係がインストールされ、最新であることを確認してください。
-アプリケーションのクラッシュ: 詳細なエラーメッセージについてはdat_predictor.logを確認してください。
-ライセンス
-このプロジェクトはMITライセンスの下で提供されています。
+## 主な機能
+- ChEMBLからの自動データ取得・キャッシュ
+- 分子記述子・フィンガープリント・サイケデリックス特徴量の自動計算
+- 標準物質のpIC50自動表示
+- 学習・予測・可視化（分布・残差・構造図）
+- Optunaによるハイパーパラメータ最適化
+- 電源断/異常終了時の自動保存・復旧
 
-謝辞
-RDKit: オープンソースのケモインフォマティクスツールキット。
-ChEMBLデータベース: 創薬のためのオープンデータリソース。
-Optuna: ハイパーパラメータ最適化フレームワーク。
-お問い合わせ
-ご質問や問題がありましたら、[r.minegishi1987@gmail.com]までご連絡ください。
+---
+
+## 標準物質リスト
+- DAT: メタンフェタミン, コカイン, メチルフェニデート
+- 5HT2A: LSD, DMT, シロシビン
+
+---
+
+## 依存関係
+- Python 3.8+
+- RDKit
+- PyQt6
+- torch (CUDA対応推奨)
+- tqdm, seaborn, optuna, chembl_webresource_client など
+
+---
+
+## ディレクトリ構成
+- `dat_predictor.py` : メインアプリ/GUI
+- `cli.py` : CLIインターフェース
+- `requirements.txt` : 依存パッケージ
+- `_docs/` : 実装ログ・要件定義
+
+---
+
+## ライセンス
+MIT License
+
+---
+
+## 開発・貢献
+Pull Request・Issue歓迎！
+
+---
+
+## リンク
+- [プロジェクトGitHub](https://github.com/zapabob/hDATpIC50prediction)
 

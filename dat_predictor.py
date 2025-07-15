@@ -25,15 +25,15 @@ import torch.optim as optim
 from tqdm import tqdm
 import optuna
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QMessageBox,
     QGroupBox, QProgressBar, QFileDialog, QPlainTextEdit,
     QComboBox
 )
-from PyQt5.QtGui import QPixmap, QImage
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap, QImage
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -76,44 +76,37 @@ class FeatureCache:
 
 
 class MolecularDescriptorCalculator:
-    """分子記述子計算クラス"""
+    """分子記述子計算クラス + サイケデリックス特徴量"""
     def __init__(self) -> None:
+        from rdkit.Chem import Descriptors, Crippen, AllChem, MACCSkeys
+        
         self.descriptor_functions = {
-            'MolWt': Descriptors.MolWt,                           # 分子量
-            'MolLogP': Descriptors.MolLogP,                       # LogP
-            'NumHDonors': Descriptors.NumHDonors,                 # 水素結合ドナー数
-            'NumHAcceptors': Descriptors.NumHAcceptors,           # 水素結合アクセプター数
-            'NumRotatableBonds': Descriptors.NumRotatableBonds,   # 回転可能結合数
-            'NumAromaticRings': Descriptors.NumAromaticRings,     # 芳香環数
-            'TPSA': Descriptors.TPSA,                             # 極性表面積
-            'FractionCSP3': Descriptors.FractionCSP3,             # sp3炭素の割合
-            'NumAliphaticRings': Descriptors.NumAliphaticRings,   # 脂肪族環の数
-            'NHOHCount': Descriptors.NHOHCount,                   # NH/OH基の数
-            'NOCount': Descriptors.NOCount,                       # N/O原子の数
-            'HallKierAlpha': Descriptors.HallKierAlpha,           # Hall-Kier α値
-            'Kappa1': Descriptors.Kappa1,                         # κ1 形状指標
-            'LabuteASA': Descriptors.LabuteASA,                   # Labute ASA
-            'MolMR': Crippen.MolMR,                               # モル屈折率
-            'NumSaturatedRings': Descriptors.NumSaturatedRings,   # 飽和環の数
-            'NumAromaticCarbocycles': Descriptors.NumAromaticCarbocycles,   # 芳香族炭素環の数
-            'NumAromaticHeterocycles': Descriptors.NumAromaticHeterocycles, # 芳香族複素環の数
-            'NumAliphaticCarbocycles': Descriptors.NumAliphaticCarbocycles, # 脂肪炭素環の数
-            'NumAliphaticHeterocycles': Descriptors.NumAliphaticHeterocycles, # 脂肪族複素環の数
-            'MaxPartialCharge': Descriptors.MaxPartialCharge,    # 最大部分電荷
-            'MinPartialCharge': Descriptors.MinPartialCharge,    # 最小部分電荷
-            'MaxAbsPartialCharge': Descriptors.MaxAbsPartialCharge, # 最大絶対部分電荷
-            'MinAbsPartialCharge': Descriptors.MinAbsPartialCharge, # 最小絶対部分電荷
-            'BalabanJ': Descriptors.BalabanJ,                      # Balaban J index
-            'BertzCT': Descriptors.BertzCT,                        # Bertz CT
-            'Chi0n': Descriptors.Chi0n,                            # 分子連結性指標
-            'Chi0v': Descriptors.Chi0v,                            # 原子価補正済み分子連結性指標
-            'ExactMolWt': Descriptors.ExactMolWt,                  # 精密分子量
-            'NumValenceElectrons': Descriptors.NumValenceElectrons # 価電子数
+            'MolWt': Descriptors.MolWt,
+            'MolLogP': Crippen.MolLogP,
+            'NumHDonors': Descriptors.NumHDonors,
+            'NumHAcceptors': Descriptors.NumHAcceptors,
+            'NumRotatableBonds': Descriptors.NumRotatableBonds,
+            'NumAromaticRings': Descriptors.NumAromaticRings,
+            'TPSA': Descriptors.TPSA,
+            'FractionCSP3': Descriptors.FractionCSP3,
+            'LabuteASA': Descriptors.LabuteASA,
+            'BalabanJ': Descriptors.BalabanJ,
+            'BertzCT': Descriptors.BertzCT,
+            # 必要に応じて追加
         }
 
         self.fingerprint_functions = {
             'ECFP4': partial(AllChem.GetMorganFingerprintAsBitVect, radius=2, nBits=1024),
             'MACCS': MACCSkeys.GenMACCSKeys
+        }
+        # サイケデリックス特徴量SMARTSパターン
+        self.psychedelic_patterns = {
+            'HasIndole': Chem.MolFromSmarts('c1cc2c(cc1)[nH]c2'),
+            'HasTryptamine': Chem.MolFromSmarts('CCN(CC)CCC1=CNC2=CC=CC=C12'),
+            'HasPhenethylamine': Chem.MolFromSmarts('NCCc1ccc(O)cc1'),
+            'MethoxyCount': Chem.MolFromSmarts('CO'),
+            'HalogenCount': Chem.MolFromSmarts('[F,Cl,Br,I]'),
+            'HasNNDimethyl': Chem.MolFromSmarts('N(C)C'),
         }
 
     def calculate(self, mol: Chem.Mol) -> Optional[np.ndarray]:
@@ -134,7 +127,21 @@ class MolecularDescriptorCalculator:
                 else:
                     fingerprints.extend(fp)
 
-            return np.array(descriptors + fingerprints)
+            # サイケデリックス特徴量
+            psychedelic_features = []
+            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasIndole'])))
+            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasTryptamine'])))
+            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasPhenethylamine'])))
+            # メトキシ基数
+            methoxy_count = len(mol.GetSubstructMatches(self.psychedelic_patterns['MethoxyCount']))
+            psychedelic_features.append(methoxy_count)
+            # ハロゲン数
+            halogen_count = len(mol.GetSubstructMatches(self.psychedelic_patterns['HalogenCount']))
+            psychedelic_features.append(halogen_count)
+            # N,N-ジメチルアミン基
+            psychedelic_features.append(int(mol.HasSubstructMatch(self.psychedelic_patterns['HasNNDimethyl'])))
+
+            return np.array(descriptors + fingerprints + psychedelic_features)
 
         except Exception as e:
             logging.error(f"特徴量計算エラー: {e}", exc_info=True)
@@ -152,7 +159,11 @@ class MolecularDescriptorCalculator:
             else:
                 n_bits = 0
             fingerprint_names.extend([f"{name}_{i}" for i in range(n_bits)])
-        return descriptor_names + fingerprint_names
+        psychedelic_names = [
+            'HasIndole', 'HasTryptamine', 'HasPhenethylamine',
+            'MethoxyCount', 'HalogenCount', 'HasNNDimethyl'
+        ]
+        return descriptor_names + fingerprint_names + psychedelic_names
 
 
 class TransformerModel(nn.Module):
@@ -404,49 +415,35 @@ class DATPredictor:
         stream_handler.setLevel(logging.INFO)
         logger.addHandler(stream_handler)
 
-    def fetch_data(self) -> pd.DataFrame:
-        """ChEMBLからのデータ取得"""
-        cache_path = Path(self.config.CACHE_DIR) / 'chembl_data.pkl'
-
+    def fetch_data(self, target_chembl_id: str = 'CHEMBL238') -> pd.DataFrame:
+        """ChEMBLからのデータ取得（ターゲットID指定可）"""
+        cache_path = Path(self.config.CACHE_DIR) / f'chembl_data_{target_chembl_id}.pkl'
         try:
             if cache_path.exists():
                 with open(cache_path, 'rb') as f:
                     df = pickle.load(f)
                 logging.info("キャッシュからデータを読み込みました")
                 return df
-
             target = new_client.target
             activity = new_client.activity
-
-            dat = target.filter(target_chembl_id='CHEMBL238')[0]
-
+            dat = target.filter(target_chembl_id=target_chembl_id)[0]
             activities = activity.filter(
                 target_chembl_id=dat['target_chembl_id'],
                 standard_type="IC50",
                 standard_units="nM"
             )
-
-            # データフレームに変換
             df = pd.DataFrame(activities)
-
-            # データ型の確認と変換
             if 'standard_value' in df.columns:
                 df['standard_value'] = pd.to_numeric(df['standard_value'], errors='coerce')
-
             if df.empty:
                 raise ValueError("データが取得できませんでした")
-
-            # 1000μM以上（1_000_000 nM）を除外
             result_df = df[['molecule_chembl_id', 'canonical_smiles', 'standard_value']].dropna()
             result_df = result_df[result_df['standard_value'] < 1_000_000]
-
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             with open(cache_path, 'wb') as f:
                 pickle.dump(result_df, f)
-
-            logging.info(f"ChEMBLから{len(result_df)}件のデータを取得しました")
+            logging.info(f"ChEMBL({target_chembl_id})から{len(result_df)}件のデータを取得しました")
             return result_df
-
         except Exception as e:
             logging.error(f"データ取得エラー: {e}", exc_info=True)
             raise
@@ -851,15 +848,16 @@ class TrainingThread(QThread):
     error = pyqtSignal(str)
     finished = pyqtSignal(dict)
 
-    def __init__(self, predictor: DATPredictor, method: str = 'optuna') -> None:
+    def __init__(self, predictor: DATPredictor, method: str = 'optuna', target_chembl_id: str = 'CHEMBL238') -> None:
         super().__init__()
         self.predictor = predictor
         self.method = method
+        self.target_chembl_id = target_chembl_id
 
     def run(self) -> None:
         try:
             self.status.emit("データ取得中...")
-            df = self.predictor.fetch_data()
+            df = self.predictor.fetch_data(target_chembl_id=self.target_chembl_id)
             self.progress.emit(10)
 
             self.status.emit("データ前処理中...")
@@ -982,6 +980,16 @@ class DATPredictorGUI(QMainWindow):
         group = QGroupBox("Model Training")
         layout = QVBoxLayout()
 
+        # ターゲット選択
+        target_layout = QHBoxLayout()
+        target_label = QLabel('Target:')
+        self.target_combo = QComboBox()
+        self.target_combo.addItem('DAT (CHEMBL238)', 'CHEMBL238')
+        self.target_combo.addItem('5HT2A (CHEMBL224)', 'CHEMBL224')
+        target_layout.addWidget(target_label)
+        target_layout.addWidget(self.target_combo)
+        layout.addLayout(target_layout)
+
         # 学習コントロール
         control_layout = QHBoxLayout()
         self.train_btn = QPushButton('Train Model')
@@ -1094,7 +1102,7 @@ class DATPredictorGUI(QMainWindow):
 
         # 構造図表示
         self.structure_view = QLabel()
-        self.structure_view.setAlignment(Qt.AlignCenter)
+        self.structure_view.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.structure_view)
 
         # 分子記述子テーブル
@@ -1125,7 +1133,10 @@ class DATPredictorGUI(QMainWindow):
             self.progress_bar.setValue(0)
             self.status_label.setText("Status: Starting training...")
 
-            self.training_thread = TrainingThread(self.predictor, method=method)
+            # ターゲットID取得
+            target_chembl_id = self.target_combo.currentData()
+
+            self.training_thread = TrainingThread(self.predictor, method=method, target_chembl_id=target_chembl_id)
             self.training_thread.progress.connect(self.progress_bar.setValue)
             self.training_thread.status.connect(self._update_status)
             self.training_thread.error.connect(self._handle_training_error)
@@ -1165,6 +1176,9 @@ class DATPredictorGUI(QMainWindow):
                 'Success',
                 f'Model trained successfully!\nSaved to {self.predictor.config.MODEL_DIR}'
             )
+            # 標準物質のpIC50を表示
+            self._display_reference_pIC50s()
+
         except Exception as e:
             self._handle_training_error(str(e))
         finally:
@@ -1306,8 +1320,8 @@ class DATPredictorGUI(QMainWindow):
             pixmap = QPixmap.fromImage(qimg)
             scaled_pixmap = pixmap.scaled(
                 400, 400,
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
             )
             self.structure_view.setPixmap(scaled_pixmap)
 
@@ -1369,6 +1383,76 @@ class DATPredictorGUI(QMainWindow):
             logging.error(f"終了処理エラー: {e}", exc_info=True)
             event.accept()
 
+    def _display_reference_pIC50s(self) -> None:
+        """学習完了時に標準物質のpIC50を表示する"""
+        target_chembl_id = self.target_combo.currentData()
+        reference_results = get_reference_pIC50s(self.predictor, target_chembl_id)
+
+        # 既存のメトリクステーブルの下に新しいテーブルを追加
+        new_row_count = self.metrics_table.rowCount()
+        self.metrics_table.setRowCount(new_row_count + 1)
+        self.metrics_table.insertRow(new_row_count)
+        self.metrics_table.setItem(new_row_count, 0, QTableWidgetItem("Reference Compounds pIC50"))
+        self.metrics_table.setItem(new_row_count, 1, QTableWidgetItem("")) # 空のセルを作成
+
+        # 新しいテーブルを作成
+        reference_table = QTableWidget()
+        reference_table.setColumnCount(3)
+        reference_table.setHorizontalHeaderLabels(["Name", "SMILES", "Predicted pIC50"])
+        reference_table.horizontalHeader().setStretchLastSection(True)
+
+        for i, (name, smiles, pred) in enumerate(reference_results):
+            row = reference_table.rowCount()
+            reference_table.insertRow(row)
+            reference_table.setItem(row, 0, QTableWidgetItem(name))
+            reference_table.setItem(row, 1, QTableWidgetItem(smiles))
+            reference_table.setItem(row, 2, QTableWidgetItem(f"{pred:.2f}"))
+
+        # 新しいテーブルを中央パネルに追加
+        center_layout = self.centralWidget().layout()
+        if center_layout:
+            # 既存の中央パネルのレイアウトを取得
+            current_center_layout = center_layout.itemAt(1).layout() # 予測パネルのレイアウト
+            if current_center_layout:
+                # 予測パネルの下に新しいテーブルを追加
+                new_layout = QVBoxLayout()
+                new_layout.addWidget(reference_table)
+                current_center_layout.addLayout(new_layout)
+            else:
+                # 予測パネルがない場合は、新しいテーブルを中央パネルに直接追加
+                new_layout = QVBoxLayout()
+                new_layout.addWidget(reference_table)
+                self.centralWidget().setLayout(new_layout)
+        else:
+            # 中央パネルがない場合は、新しいテーブルをウィンドウに直接追加
+            new_layout = QVBoxLayout()
+            new_layout.addWidget(reference_table)
+            self.setCentralWidget(QWidget()) # 既存の中央パネルをクリア
+            self.setCentralWidget(QWidget()) # 新しい中央パネルを設定
+            self.centralWidget().setLayout(new_layout)
+
+
+REFERENCE_COMPOUNDS = {
+    'CHEMBL238': {  # DAT
+        'Methamphetamine': 'CC(CC1=CC=CC=C1)NC',
+        'Cocaine': 'CN1C2CCC1C(C2)OC(=O)C3=CC=CC=C3C(=O)OC',
+        'Methylphenidate': 'COC(=O)C1=CC=CC=C1C(C)N',
+    },
+    'CHEMBL224': {  # 5HT2A
+        'LSD': 'CN(C)C1CCC2=C1C3C(C2)C4=CC=CC=C4N3C',
+        'DMT': 'CN(C)CCC1=CNC2=CC=CC=C12',
+        'Psilocybin': 'COP(=O)(O)OCC1C2=CC=CC=C2NC1',
+    }
+}
+
+def get_reference_pIC50s(predictor, target_chembl_id):
+    refs = REFERENCE_COMPOUNDS.get(target_chembl_id, {})
+    results = []
+    for name, smiles in refs.items():
+        pred, _ = predictor.predict(smiles)
+        results.append((name, smiles, pred))
+    return results
+
 
 def main():
     """メイン関数"""
@@ -1383,7 +1467,7 @@ def main():
 
         gui = DATPredictorGUI(predictor)
         gui.show()
-        sys.exit(app.exec_())
+        sys.exit(app.exec())  # PyQt6ではexec_()ではなくexec()
 
     except Exception as e:
         logging.error(f"アプリケーション実行エラー: {e}", exc_info=True)
